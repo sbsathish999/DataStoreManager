@@ -3,10 +3,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.*;
-import java.util.HashMap;
-import java.util.InputMismatchException;
-import java.util.Map;
-import java.util.Scanner;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class Utility {
@@ -22,15 +19,17 @@ public class Utility {
             } catch (IOException e) {
                 throw e;
             }
+        } else {
+            convertedValue = value;
         }
         return convertedValue;
     }
 
-    protected String convertValue(Map<String, Object> dataMap, String valueType) {
+    protected String convertValue(Map<String, Object> dataMap, String valueType) throws Throwable {
         ObjectMapper mapper = new ObjectMapper();
         return dataMap
                 .entrySet()
-                .stream()
+                .parallelStream()
                 .map(entry -> {
                     String data = null;
                     try {
@@ -38,7 +37,7 @@ public class Utility {
                         if("json".equals(valueType)) {
                             value = mapper.writeValueAsString(entry.getValue());
                         } else {
-                            value = ""+entry.getValue();
+                            value = String.valueOf(entry.getValue());
                         }
                         data = entry.getKey() + "=" + value;
                     } catch (JsonProcessingException e) {
@@ -49,7 +48,7 @@ public class Utility {
                 .collect(Collectors.joining("\n"));
     }
 
-    protected String readKey() {
+    protected String readKey() throws Throwable {
         Boolean pass = false;
         String key = null;
         do {
@@ -61,15 +60,15 @@ public class Utility {
             }catch (Throwable e) {
                 if(e.getClass().equals(InputMismatchException.class)){
                     System.out.println("Please enter only numbers as option");
+                    inputReader.next();
                 }
-                inputReader.next();
                 continue;
             }
         } while (pass != true);
         return key;
     }
 
-    protected Boolean isValidKeyLength(String key) {
+    protected Boolean isValidKeyLength(String key) throws Throwable{
         if(key.length() > 32) {
             System.out.println("Key length should be the maximum of 32 characters");
             return false;
@@ -86,10 +85,9 @@ public class Utility {
     }
 
     protected String getCategory(Map<String, Object> existingDataMap, Map<String, Object> timeToLiveMap,
-                                 String type, Boolean byPassOption) {
-        Boolean pass = false;
+                                 String type, Boolean byPassOption) throws Throwable {
         String key = null;
-        String displayOption = type.equals("read") ? "Read" : type.equals("delete") ? "Delete" : "Create";
+        String displayOption = type.equals("read") ? "Fetch" : type.equals("delete") ? "Delete" : "Create";
         Integer option = 1;
         do {
             try {
@@ -107,39 +105,48 @@ public class Utility {
                         if(!isValidKeyLength(key)) {
                             continue;
                         }
+                       // System.out.println("type : " + type);
                         if (type.equals("write")) {
                             if (existingDataMap.get(key) != null) {
                                 System.out.println("Already there is a data associated with this key, use different category");
                                 continue;
                             }
                         } else {
-                            if (existingDataMap.get(key) == null || isKeyExpired(key,timeToLiveMap)) {
+//                            System.out.println("inside else case");
+//                            System.out.println("datamap : " + existingDataMap);
+                            Boolean isKeyExpired = isKeyExpired(key, timeToLiveMap);
+
+                            if(existingDataMap.get(key) == null || isKeyExpired) {
                                 System.out.println("No data is associated with this category, use different category");
                                 continue;
                             }
                         }
+                        option = 2;
                         break;
                     case 2:
                         key = null;
-                        break;
                 }
-                pass = true;
             } catch (Throwable e) {
+               // e.printStackTrace();
                 if(e.getClass().equals(InputMismatchException.class)){
                     System.out.println("Please enter only numbers as option");
+                    inputReader.next();
                 }
-                inputReader.next();
                 continue;
             }
-        } while (pass != true);
+        } while (option != 2);
         return key;
     }
 
-    protected Boolean isKeyExpired(String key, Map<String, Object> timeToLiveMap) {
-        Long expiryTime = (Long) timeToLiveMap.get(key);
-        if(expiryTime != null && System.currentTimeMillis() > expiryTime) return true;
-        return false;
+    protected Boolean isKeyExpired(String key, Map<String, Object> timeToLiveMap) throws Throwable {
+       Long expiryTime =  timeToLiveMap.get(key) != null ? Long.valueOf(String.valueOf(timeToLiveMap.get(key))) : null;
+       if(expiryTime != null && System.currentTimeMillis() > expiryTime) {
+           System.out.println("expired time : " + new Date(expiryTime));
+           return  true;
+       }
+       return false;
     }
+
     protected String readValue() throws Throwable {
         Boolean pass = false;
         String value = null;
@@ -155,14 +162,27 @@ public class Utility {
     }
 
     protected Map<String, Object> getInputDataFromUser() throws Throwable {
-        System.out.println("Enter the number of data going to be entered : ");
-        Integer count = inputReader.nextInt();
-        Map<String, Object> map = new HashMap<>(count);
-        for(int i=0; i< count; i++) {
-            String key = readKey();
-            String value = readValue();
-            map.put(key, value);
-        }
+        Map<String, Object> map = null;
+        Boolean pass = false;
+        do{
+            try{
+                System.out.println("Enter the number of data going to be entered : ");
+                Integer count = inputReader.nextInt();
+                map = new HashMap<>(count);
+                for (int i = 0; i < count; i++) {
+                    String key = readKey();
+                    String value = readValue();
+                    map.put(key, value);
+                }
+                pass = true;
+            } catch (Throwable e) {
+                if(e.getClass().equals(InputMismatchException.class)){
+                    System.out.println("Please enter only numbers as option");
+                    inputReader.next();
+                }
+                continue;
+            }
+        } while (pass != true);
         return map;
     }
 }
